@@ -2,6 +2,7 @@
  * Angular nestable 0.0.1
  * Copyright (c) 2014 Kamil Pekala
  * https://github.com/kamilkp/ng-nestable
+ * Edited to fit DCMS Needs
  */
 
 /**
@@ -56,7 +57,7 @@
 	angular.module('ng-nestable', [])
 		.provider('$nestable', function(){
 			var modelName = '$item';
-			var itemProperty = 'item';
+			var itemProperty = null;
 			var childrenProperty = 'children';
 			var collapseAllOnStart = false;
 			var defaultOptions = {};
@@ -117,7 +118,6 @@
 			 * Method to set default nestable options
 			 * @param  {[object]} value
 			 * You can change the follow options:
-
 				maxDepth        : number of levels an item can be nested (default 5)
 				group           : group ID to allow dragging between lists (default 0)
 				
@@ -133,8 +133,6 @@
 				emptyClass      : The class used for empty list placeholder elements (default 'dd-empty')
 				expandBtnHTML   : The HTML text used to generate a list item expand button (default '<button data-action="expand">Expand></button>')
 				collapseBtnHTML : The HTML text used to generate a list item collapse button (default '<button data-action="collapse">Collapse</button>')
-
-
 			 */
 			this.defaultOptions = function(value){
 				defaultOptions = value;
@@ -156,55 +154,100 @@
 						$scope.$watchCollection(function(){
 							return $ngModel.$modelValue;
 						}, function(model){
-							if(model && element.is(':empty')){
+                                                    if(model){
 
-								/**
-								 * we are running the formatters here instead of watching on $viewValue because our model is an Array
-								 * and angularjs ngModel watcher watches for "shallow" changes and otherwise the possible formatters wouldn't
-								 * get executed
-								 */
-								model = runFormatters(model, $ngModel);
-								var root = buildNestableHtml(model, itemTemplate);
-								$element.empty().append(root);
-								$compile(root)($scope);
-								root.nestable(options);
-								if ($nestable.collapseAllOnStart) {
-									root.nestable('collapseAll');
-								}
-								root.on('change', function(){
-									$ngModel.$setViewValue(root.nestable('serialize'));
-									$scope && $scope.$root && $scope.$root.$$phase || $scope.$apply();
-								});
-							}
-						});
+                                                    /**
+                                                     * we are running the formatters here instead of watching on $viewValue because our model is an Array
+                                                     * and angularjs ngModel watcher watches for "shallow" changes and otherwise the possible formatters wouldn't
+                                                     * get executed
+                                                     */
+                                                    
+                                                    model = runFormatters(model, $ngModel);
+                                                   
+                                                    // TODO: optimize as rebuilding is not necessary here
+                                                    var root = buildNestableHtml(model, itemTemplate);
+                                                    $element.empty().append(root);
+                                                    $compile(root)($scope);
+                                                    root.nestable(options);
+                                                    if ($nestable.collapseAllOnStart) {
+                                                            root.nestable('collapseAll');
+                                                    }
+                                                    root.on('change', function(){
+
+                                                            /*$ngModel.$setViewValue(root.nestable('serialize'));
+                                                            $scope && $scope.$root && $scope.$root.$$phase || $scope.$apply(); */
+                                                    });
+
+                                                    root.on('newParent', function(event, data){
+
+                                                            /*$ngModel.$setViewValue(root.nestable('serialize'));
+                                                            $scope && $scope.$root && $scope.$root.$$phase || $scope.$apply(); */
+                                                    });
+                                                }
+                                            });
 					};
 				},
 				controller: angular.noop
 			};
+                        
+                        function getNestableChildren(model, item){
+                            var children = [];
+                            var i = 0;
+                            model.forEach(function(itemc){
+                                if(itemc.parent_id && itemc.parent_id == item.id){
+                                    children.push(itemc);
+                                  
+                                }
+                                i++;
+                            });
+                            return children;
+                        }
 
 			function buildNestableHtml(model, tpl){
-				var root = $('<div class="dd"></div>');
-				var rootList = $('<ol class="dd-list"></ol>').appendTo(root);
-				model.forEach(function f(item){
-					var list = Array.prototype.slice.call(arguments).slice(-1)[0];
-					if(!(list instanceof $)) list = rootList;
+                            var root = $('<div class="dd"></div>');
+                            var rootList = $('<ol class="dd-list"></ol>').appendTo(root);
+                            angular.forEach(model, function f(item){ 
+                                item[$nestable.childrenProperty] = [];
+                                // has children
+   
+                                angular.forEach(model, function(itemc, index){
+                                    if(itemc.parent_id && itemc.parent_id == item.id){
+                                        item[$nestable.childrenProperty].push(itemc);
+                                        console.log(index);
+                                        model.slice(index, 1);
+                                    }
+                                });
+                                var children = item[$nestable.childrenProperty];
+                                var list = Array.prototype.slice.call(arguments).slice(-1)[0];
+                                //Append
+                                if(!(list instanceof $)){
+                                    list = rootList;
+                                    if(item.parent_id && item.parent_id != 0){
+                                       /* children.push(item);
+                                        return;*/
+                                        return;
+                                    }
+                                }
+                                
+                                var listItem = $('<li class="dd-item"></li>');
+                                var itemData = $nestable.itemProperty ? item[$nestable.itemProperty] : item;
+                                listItem.data('item', itemData);
+                                var listElement = $('<div ng-nestable-item></div>');
+                                list.append(listItem);
+                                listElement.append(tpl).appendTo(listItem);
 
-					var listItem = $('<li class="dd-item"></li>');
-					var listElement = $('<div ng-nestable-item class="dd-handle"></div>');
-					listElement.append(tpl).appendTo(listItem);
-					list.append(listItem);
-					var itemData = $nestable.itemProperty ? item[$nestable.itemProperty] : item;
-					listItem.data('item', itemData);
-					var children = item[$nestable.childrenProperty];
-					if(isArray(children) && children.length > 0){
-						var subRoot = $('<ol class="dd-list"></ol>').appendTo(listItem);
-						children.forEach(function(item){
-							f.apply(this, Array.prototype.slice.call(arguments).concat([subRoot]));
-						});
-					}
-				});
 
-				return root;
+                                if(isArray(children) && children.length > 0){
+                                    var subRoot = $('<ol class="dd-list"></ol>').appendTo(listItem);
+                                    children.forEach(function(item){
+                                        console.log("this");
+                                        f.apply(this, Array.prototype.slice.call(arguments).concat([subRoot]));
+                                    });
+                                }
+                              
+                            });
+                                
+                            return root;
 			}
 
 			function isArray(arr){
@@ -212,15 +255,15 @@
 			}
 
 			function runFormatters(value, ctrl){
-				var formatters = ctrl.$formatters,
-				idx = formatters.length;
+                            var formatters = ctrl.$formatters,
+                            idx = formatters.length;
+                            ctrl.$modelValue = value;
+                            while(idx--) {
+                                value = formatters[idx](value);
 
-				ctrl.$modelValue = value;
-				while(idx--) {
-					value = formatters[idx](value);
-				}
+                            }
 
-				return value;
+                            return value;
 			}
 	}])
 	.directive('ngNestableItem', ['$nestable', function($nestable){
